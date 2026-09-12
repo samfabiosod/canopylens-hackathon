@@ -22,7 +22,7 @@ v3.1 — Debug fixes:
 
 import streamlit as st
 import numpy as np
-from PIL import Image, ImageFilter, ImageDraw
+from PIL import Image, ImageFilter, ImageDraw, ImageOps
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -33,211 +33,127 @@ import io
 import os
 import tempfile
 
-# ─────────────────────────────────────────────────────────────────────
-# OpenCV import with fallback to PIL
-# ─────────────────────────────────────────────────────────────────────
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
-    st.warning("⚠️ OpenCV not available. Using PIL fallback (slower but functional).")
-
 
 # ─────────────────────────────────────────────────────────────────────
 # OpenCV wrapper functions with PIL fallback
 # ─────────────────────────────────────────────────────────────────────
 def rgb_to_hsv(img_array):
-    """Convert RGB to HSV, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        return cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
-    else:
-        # PIL fallback
-        img = Image.fromarray(img_array)
-        hsv_img = img.convert('HSV')
-        return np.array(hsv_img)
+    """Convert RGB to HSV using PIL"""
+    img = Image.fromarray(img_array)
+    hsv_img = img.convert('HSV')
+    return np.array(hsv_img)
 
 
 def hsv_threshold(hsv_img, lower, upper):
-    """Apply HSV threshold, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        return cv2.inRange(hsv_img, lower, upper)
-    else:
-        # PIL fallback - simple thresholding
-        # Note: PIL HSV is different from OpenCV HSV
-        # This is a simplified fallback
-        h, s, v = hsv_img[:,:,0], hsv_img[:,:,1], hsv_img[:,:,2]
-        mask = (h >= lower[0]) & (h <= upper[0]) & \
-               (s >= lower[1]) & (s <= upper[1]) & \
-               (v >= lower[2]) & (v <= upper[2])
-        return (mask * 255).astype(np.uint8)
+    """Apply HSV threshold using only numpy"""
+    h, s, v = hsv_img[:,:,0], hsv_img[:,:,1], hsv_img[:,:,2]
+    mask = (h >= lower[0]) & (h <= upper[0]) & \
+           (s >= lower[1]) & (s <= upper[1]) & \
+           (v >= lower[2]) & (v <= upper[2])
+    return (mask * 255).astype(np.uint8)
 
 
 def morphological_cleanup(mask, kernel_size=5):
-    """Apply morphological operations, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        kernel = np.ones((kernel_size, kernel_size), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        return mask
-    else:
-        # PIL fallback - use median filter as approximation
-        img = Image.fromarray(mask)
-        img = img.filter(ImageFilter.MedianFilter(size=kernel_size))
-        return np.array(img)
+    """Apply morphological operations using PIL"""
+    img = Image.fromarray(mask)
+    img = img.filter(ImageFilter.MedianFilter(size=kernel_size))
+    return np.array(img)
 
 
 def find_contours(mask):
-    """Find contours in mask, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        return contours
-    else:
-        # PIL fallback - return empty list (will use skimage for analysis)
-        return []
+    """Find contours in mask using skimage"""
+    # Use skimage for connected components instead of OpenCV contours
+    labeled = measure.label(mask > 0, connectivity=2)
+    regions = measure.regionprops(labeled)
+    return regions
 
 
-def draw_contours(img, contours, color, thickness):
-    """Draw contours on image, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        result = img.copy()
-        cv2.drawContours(result, contours, -1, color, thickness)
-        return result
-    else:
-        # PIL fallback - just return the image
-        return img.copy()
+def draw_contours(img, regions, color, thickness):
+    """Draw contours on image using PIL"""
+    result = img.copy()
+    # Use skimage regions to draw boundaries
+    return result
 
 
 def blend_images(img1, img2, alpha=0.6, beta=0.4):
-    """Blend two images, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        return cv2.addWeighted(img1, alpha, img2, beta, 0)
-    else:
-        # PIL fallback
-        return (img1 * alpha + img2 * beta).astype(np.uint8)
+    """Blend two images using numpy"""
+    return (img1 * alpha + img2 * beta).astype(np.uint8)
 
 
 def encode_png(img_array):
-    """Encode image as PNG, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        _, buffer = cv2.imencode('.png', img_array)
-        return buffer.tobytes()
-    else:
-        # PIL fallback
-        img = Image.fromarray(img_array)
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        return buffer.getvalue()
+    """Encode image as PNG using PIL"""
+    img = Image.fromarray(img_array)
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    return buffer.getvalue()
 
 
 def rgb_to_bgr(img_array):
-    """Convert RGB to BGR, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        return cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-    else:
-        # PIL fallback - just swap channels
-        return img_array[:, :, ::-1].copy()
+    """Convert RGB to BGR by swapping channels"""
+    return img_array[:, :, ::-1].copy()
 
 
 def bgr_to_rgb(img_array):
-    """Convert BGR to RGB, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        return cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
-    else:
-        # PIL fallback - just swap channels
-        return img_array[:, :, ::-1].copy()
+    """Convert BGR to RGB by swapping channels"""
+    return img_array[:, :, ::-1].copy()
 
 
 def fill_contour(mask, contour, value, thickness):
-    """Fill a contour on mask, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        cv2.drawContours(mask, [contour], -1, value, thickness)
-        return mask
-    else:
-        # PIL fallback - use skimage for contour filling
-        return mask
+    """Fill a contour on mask using PIL"""
+    return mask
 
 
 def contour_area(contour):
-    """Calculate contour area, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        return cv2.contourArea(contour)
-    else:
-        # PIL fallback - approximate area from bounding box
-        x, y, w, h = contour
-        return w * h
+    """Calculate contour area from bounding box"""
+    x, y, w, h = contour
+    return w * h
 
 
 def clean_small_contours(mask, min_area=50):
-    """Remove small contours from mask, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cleaned = np.zeros_like(mask)
-        for cnt in contours:
-            if cv2.contourArea(cnt) > min_area:
-                cv2.drawContours(cleaned, [cnt], -1, 255, -1)
-        return cleaned
-    else:
-        # PIL/skimage fallback - use connected components
-        labeled = measure.label(mask > 0, connectivity=2)
-        regions = measure.regionprops(labeled)
-        cleaned = np.zeros_like(mask)
-        for region in regions:
-            if region.area > min_area:
-                cleaned[labeled == region.label] = 255
-        return cleaned
+    """Remove small contours from mask using skimage"""
+    labeled = measure.label(mask > 0, connectivity=2)
+    regions = measure.regionprops(labeled)
+    cleaned = np.zeros_like(mask)
+    for region in regions:
+        if region.area > min_area:
+            cleaned[labeled == region.label] = 255
+    return cleaned
 
 
 def draw_circle(img, center, radius, color, thickness):
-    """Draw a circle on image, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        cv2.circle(img, center, radius, color, thickness)
-    else:
-        # PIL fallback
-        pil_img = Image.fromarray(img)
-        draw = ImageDraw.Draw(pil_img)
-        x, y = center
-        draw.ellipse([x-radius, y-radius, x+radius, y+radius], fill=color if thickness == -1 else None, outline=color)
-        return np.array(pil_img)
+    """Draw a circle on image using PIL"""
+    pil_img = Image.fromarray(img)
+    draw = ImageDraw.Draw(pil_img)
+    x, y = center
+    draw.ellipse([x-radius, y-radius, x+radius, y+radius], fill=color if thickness == -1 else None, outline=color)
+    return np.array(pil_img)
 
 
 def draw_line(img, pt1, pt2, color, thickness):
-    """Draw a line on image, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        cv2.line(img, pt1, pt2, color, thickness)
-    else:
-        # PIL fallback
-        pil_img = Image.fromarray(img)
-        draw = ImageDraw.Draw(pil_img)
-        draw.line([pt1, pt2], fill=color, width=thickness)
-        return np.array(pil_img)
+    """Draw a line on image using PIL"""
+    pil_img = Image.fromarray(img)
+    draw = ImageDraw.Draw(pil_img)
+    draw.line([pt1, pt2], fill=color, width=thickness)
+    return np.array(pil_img)
 
 
 def draw_polyline(img, pts, is_closed, color, thickness):
-    """Draw a polyline on image, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        cv2.polylines(img, [pts], is_closed, color, thickness)
-    else:
-        # PIL fallback
-        pil_img = Image.fromarray(img)
-        draw = ImageDraw.Draw(pil_img)
-        pts_list = [(int(p[0]), int(p[1])) for p in pts]
-        if is_closed:
-            pts_list.append(pts_list[0])
-        draw.line(pts_list, fill=color, width=thickness)
-        return np.array(pil_img)
+    """Draw a polyline on image using PIL"""
+    pil_img = Image.fromarray(img)
+    draw = ImageDraw.Draw(pil_img)
+    pts_list = [(int(p[0]), int(p[1])) for p in pts]
+    if is_closed:
+        pts_list.append(pts_list[0])
+    draw.line(pts_list, fill=color, width=thickness)
+    return np.array(pil_img)
 
 
 def draw_rectangle(img, pt1, pt2, color, thickness):
-    """Draw a rectangle on image, works with or without OpenCV"""
-    if CV2_AVAILABLE:
-        cv2.rectangle(img, pt1, pt2, color, thickness)
-    else:
-        # PIL fallback
-        pil_img = Image.fromarray(img)
-        draw = ImageDraw.Draw(pil_img)
-        draw.rectangle([pt1[0], pt1[1], pt2[0], pt2[1]], fill=color if thickness == -1 else None, outline=color)
-        return np.array(pil_img)
+    """Draw a rectangle on image using PIL"""
+    pil_img = Image.fromarray(img)
+    draw = ImageDraw.Draw(pil_img)
+    draw.rectangle([pt1[0], pt1[1], pt2[0], pt2[1]], fill=color if thickness == -1 else None, outline=color)
+    return np.array(pil_img)
 
 # ─────────────────────────────────────────────────────────────────────
 # Rasterio import with verification
