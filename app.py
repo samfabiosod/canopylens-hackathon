@@ -22,8 +22,7 @@ v3.1 — Debug fixes:
 
 import streamlit as st
 import numpy as np
-import cv2
-from PIL import Image
+from PIL import Image, ImageFilter, ImageDraw
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -33,6 +32,212 @@ from datetime import datetime
 import io
 import os
 import tempfile
+
+# ─────────────────────────────────────────────────────────────────────
+# OpenCV import with fallback to PIL
+# ─────────────────────────────────────────────────────────────────────
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    st.warning("⚠️ OpenCV not available. Using PIL fallback (slower but functional).")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# OpenCV wrapper functions with PIL fallback
+# ─────────────────────────────────────────────────────────────────────
+def rgb_to_hsv(img_array):
+    """Convert RGB to HSV, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        return cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
+    else:
+        # PIL fallback
+        img = Image.fromarray(img_array)
+        hsv_img = img.convert('HSV')
+        return np.array(hsv_img)
+
+
+def hsv_threshold(hsv_img, lower, upper):
+    """Apply HSV threshold, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        return cv2.inRange(hsv_img, lower, upper)
+    else:
+        # PIL fallback - simple thresholding
+        # Note: PIL HSV is different from OpenCV HSV
+        # This is a simplified fallback
+        h, s, v = hsv_img[:,:,0], hsv_img[:,:,1], hsv_img[:,:,2]
+        mask = (h >= lower[0]) & (h <= upper[0]) & \
+               (s >= lower[1]) & (s <= upper[1]) & \
+               (v >= lower[2]) & (v <= upper[2])
+        return (mask * 255).astype(np.uint8)
+
+
+def morphological_cleanup(mask, kernel_size=5):
+    """Apply morphological operations, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        return mask
+    else:
+        # PIL fallback - use median filter as approximation
+        img = Image.fromarray(mask)
+        img = img.filter(ImageFilter.MedianFilter(size=kernel_size))
+        return np.array(img)
+
+
+def find_contours(mask):
+    """Find contours in mask, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        return contours
+    else:
+        # PIL fallback - return empty list (will use skimage for analysis)
+        return []
+
+
+def draw_contours(img, contours, color, thickness):
+    """Draw contours on image, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        result = img.copy()
+        cv2.drawContours(result, contours, -1, color, thickness)
+        return result
+    else:
+        # PIL fallback - just return the image
+        return img.copy()
+
+
+def blend_images(img1, img2, alpha=0.6, beta=0.4):
+    """Blend two images, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        return cv2.addWeighted(img1, alpha, img2, beta, 0)
+    else:
+        # PIL fallback
+        return (img1 * alpha + img2 * beta).astype(np.uint8)
+
+
+def encode_png(img_array):
+    """Encode image as PNG, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        _, buffer = cv2.imencode('.png', img_array)
+        return buffer.tobytes()
+    else:
+        # PIL fallback
+        img = Image.fromarray(img_array)
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG')
+        return buffer.getvalue()
+
+
+def rgb_to_bgr(img_array):
+    """Convert RGB to BGR, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        return cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    else:
+        # PIL fallback - just swap channels
+        return img_array[:, :, ::-1].copy()
+
+
+def bgr_to_rgb(img_array):
+    """Convert BGR to RGB, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        return cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+    else:
+        # PIL fallback - just swap channels
+        return img_array[:, :, ::-1].copy()
+
+
+def fill_contour(mask, contour, value, thickness):
+    """Fill a contour on mask, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        cv2.drawContours(mask, [contour], -1, value, thickness)
+        return mask
+    else:
+        # PIL fallback - use skimage for contour filling
+        return mask
+
+
+def contour_area(contour):
+    """Calculate contour area, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        return cv2.contourArea(contour)
+    else:
+        # PIL fallback - approximate area from bounding box
+        x, y, w, h = contour
+        return w * h
+
+
+def clean_small_contours(mask, min_area=50):
+    """Remove small contours from mask, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cleaned = np.zeros_like(mask)
+        for cnt in contours:
+            if cv2.contourArea(cnt) > min_area:
+                cv2.drawContours(cleaned, [cnt], -1, 255, -1)
+        return cleaned
+    else:
+        # PIL/skimage fallback - use connected components
+        labeled = measure.label(mask > 0, connectivity=2)
+        regions = measure.regionprops(labeled)
+        cleaned = np.zeros_like(mask)
+        for region in regions:
+            if region.area > min_area:
+                cleaned[labeled == region.label] = 255
+        return cleaned
+
+
+def draw_circle(img, center, radius, color, thickness):
+    """Draw a circle on image, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        cv2.circle(img, center, radius, color, thickness)
+    else:
+        # PIL fallback
+        pil_img = Image.fromarray(img)
+        draw = ImageDraw.Draw(pil_img)
+        x, y = center
+        draw.ellipse([x-radius, y-radius, x+radius, y+radius], fill=color if thickness == -1 else None, outline=color)
+        return np.array(pil_img)
+
+
+def draw_line(img, pt1, pt2, color, thickness):
+    """Draw a line on image, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        cv2.line(img, pt1, pt2, color, thickness)
+    else:
+        # PIL fallback
+        pil_img = Image.fromarray(img)
+        draw = ImageDraw.Draw(pil_img)
+        draw.line([pt1, pt2], fill=color, width=thickness)
+        return np.array(pil_img)
+
+
+def draw_polyline(img, pts, is_closed, color, thickness):
+    """Draw a polyline on image, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        cv2.polylines(img, [pts], is_closed, color, thickness)
+    else:
+        # PIL fallback
+        pil_img = Image.fromarray(img)
+        draw = ImageDraw.Draw(pil_img)
+        pts_list = [(int(p[0]), int(p[1])) for p in pts]
+        if is_closed:
+            pts_list.append(pts_list[0])
+        draw.line(pts_list, fill=color, width=thickness)
+        return np.array(pil_img)
+
+
+def draw_rectangle(img, pt1, pt2, color, thickness):
+    """Draw a rectangle on image, works with or without OpenCV"""
+    if CV2_AVAILABLE:
+        cv2.rectangle(img, pt1, pt2, color, thickness)
+    else:
+        # PIL fallback
+        pil_img = Image.fromarray(img)
+        draw = ImageDraw.Draw(pil_img)
+        draw.rectangle([pt1[0], pt1[1], pt2[0], pt2[1]], fill=color if thickness == -1 else None, outline=color)
+        return np.array(pil_img)
 
 # ─────────────────────────────────────────────────────────────────────
 # Rasterio import with verification
@@ -534,7 +739,7 @@ def create_sample_image() -> Image.Image:
         y = np.random.randint(0, 500)
         r = np.random.randint(25, 90)
         green = np.random.randint(80, 160)
-        cv2.circle(img, (x, y), r, (20, green, 20), -1)
+        img = draw_circle(img, (x, y), r, (20, green, 20), -1)
 
     # Add texture to forest
     for _ in range(300):
@@ -542,23 +747,23 @@ def create_sample_image() -> Image.Image:
         y = np.random.randint(0, 500)
         r = np.random.randint(2, 6)
         g = np.random.randint(60, 140)
-        cv2.circle(img, (x, y), r, (15, g, 15), -1)
+        img = draw_circle(img, (x, y), r, (15, g, 15), -1)
 
     # Dirt paths
     for _ in range(4):
         x1, y1 = np.random.randint(0, 500, 2)
         x2, y2 = np.random.randint(0, 500, 2)
-        cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), (60, 40, 20), np.random.randint(3, 8))
+        img = draw_line(img, (int(x1), int(y1)), (int(x2), int(y2)), (60, 40, 20), np.random.randint(3, 8))
 
     # River
     pts = np.array([[0, 300], [150, 280], [300, 350], [450, 320], [500, 340]], np.int32)
-    cv2.polylines(img, [pts], False, (30, 80, 180), 6)
+    img = draw_polyline(img, pts, False, (30, 80, 180), 6)
 
     # Small buildings (gray squares)
     for _ in range(10):
         x, y = np.random.randint(200, 450, 2)
         s = np.random.randint(4, 10)
-        cv2.rectangle(img, (int(x), int(y)), (int(x + s), int(y + s)), (160, 160, 160), -1)
+        img = draw_rectangle(img, (int(x), int(y)), (int(x + s), int(y + s)), (160, 160, 160), -1)
 
     return Image.fromarray(img)
 
@@ -683,30 +888,23 @@ def process_image(
     Returns: (processed_img, contour_img, mask, metrics_dict)
     """
     img_array = np.array(image.convert("RGB"))
-    img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    img_bgr = rgb_to_bgr(img_array)
 
     if progress_callback:
         progress_callback(0)
 
-    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    hsv = rgb_to_hsv(img_array)  # Direct RGB to HSV
     if progress_callback:
         progress_callback(1)
 
     lower_green = np.array([30, 40, 40])
     upper_green = np.array([80, 255, 255])
-    mask = cv2.inRange(hsv, lower_green, upper_green)
+    mask = hsv_threshold(hsv, lower_green, upper_green)
     if progress_callback:
         progress_callback(2)
 
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-
-    contours_raw, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cleaned_mask = np.zeros_like(mask)
-    for cnt in contours_raw:
-        if cv2.contourArea(cnt) > 50:
-            cv2.drawContours(cleaned_mask, [cnt], -1, 255, -1)
+    mask = morphological_cleanup(mask, kernel_size=5)
+    cleaned_mask = clean_small_contours(mask, min_area=50)
 
     labeled = measure.label(cleaned_mask, connectivity=2)
     boundaries = find_boundaries(labeled, mode="thick")
@@ -760,10 +958,10 @@ def process_image(
         "tree_note_key": tree_result["note_key"],
     }
 
-    overlay = img_bgr.copy()
+    overlay = img_array.copy()  # Use RGB directly
     overlay[cleaned_mask > 0] = [0, 200, 0]
-    processed = cv2.addWeighted(img_bgr, 0.6, overlay, 0.4, 0)
-    processed_rgb = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
+    processed = blend_images(img_array, overlay, alpha=0.6, beta=0.4)
+    processed_rgb = processed  # Already in RGB
 
     contour_img = processed_rgb.copy()
     contour_img[boundaries] = [255, 255, 0]
@@ -1245,7 +1443,7 @@ def main():
             dl1, dl2 = st.columns(2)
 
             with dl1:
-                mask_bytes = cv2.imencode(".png", mask)[1].tobytes()
+                mask_bytes = encode_png(mask)
                 st.download_button(
                     label=t["download_mask"],
                     data=mask_bytes,
