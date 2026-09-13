@@ -13,7 +13,7 @@ Deploy:
 
 100% free, no API keys, no paid services.
 
-v6.0 — Final Production Release:
+v6.1 — Final Production Release:
   • Zero DEBUG messages — clean professional interface
   • Wide HSV thresholds with fallback for GeoTIFF compatibility
   • Fixed PDF KeyError bug
@@ -26,7 +26,7 @@ v6.0 — Final Production Release:
 
 import streamlit as st
 import numpy as np
-from PIL import Image, ImageFilter, ImageDraw, ImageOps
+from PIL import Image, ImageFilter, ImageDraw
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
