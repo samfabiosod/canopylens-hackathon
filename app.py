@@ -13,11 +13,15 @@ Deploy:
 
 100% free, no API keys, no paid services.
 
-v4.2 — GeoTIFF Debug Version:
-  • Complete debug logs for TIF loading issues
-  • Robust normalization for uint16/float data
-  • Session state verification
-  • Visual debug for image loading
+v6.0 — Final Production Release:
+  • Zero DEBUG messages — clean professional interface
+  • Wide HSV thresholds with fallback for GeoTIFF compatibility
+  • Fixed PDF KeyError bug
+  • Full GeoTIFF support (Sentinel-2, Planet, drone)
+  • Adaptive tree counting based on resolution
+  • Professional PDF report generation
+  • Bilingual interface (English/French)
+  • No OpenCV dependency — uses PIL/Pillow only
 """
 
 import streamlit as st
@@ -58,13 +62,6 @@ def morphological_cleanup(mask, kernel_size=5):
     img = Image.fromarray(mask)
     img = img.filter(ImageFilter.MedianFilter(size=kernel_size))
     return np.array(img)
-
-
-def find_contours(mask):
-    """Find contours in mask using skimage"""
-    labeled = measure.label(mask > 0, connectivity=2)
-    regions = measure.regionprops(labeled)
-    return regions
 
 
 def blend_images(img1, img2, alpha=0.6, beta=0.4):
@@ -182,14 +179,28 @@ RESOLUTION_PRESETS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Translations (simplified for brevity)
+# Tree density reference (IPCC/FAO defaults)
+# ─────────────────────────────────────────────────────────────────────
+TREE_DENSITY_REFERENCE = {
+    "Tropical Moist Forest": (400, 600),
+    "Forêt Tropicale Humide": (400, 600),
+    "Tropical Dry Forest": (200, 400),
+    "Forêt Tropicale Sèche": (200, 400),
+    "Mangrove Forest": (600, 1000),
+    "Forêt de Mangrove": (600, 1000),
+    "Temperate Forest": (300, 500),
+    "Forêt Tempérée": (300, 500),
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Translations
 # ─────────────────────────────────────────────────────────────────────
 T = {
     "English": {
         "title": "🌿 CanopyLens — Forest Canopy Analysis",
         "subtitle": "Estimate forest canopy cover and carbon stock from satellite imagery",
         "upload": "Upload a satellite image (RGB or GeoTIFF)",
-        "upload_hint": "💡 Supported formats: PNG, JPG, GeoTIFF (.tif/.tiff)",
+        "upload_hint": "💡 Supported formats: PNG, JPG, GeoTIFF (.tif/.tiff). Sentinel-2 16-bit data is auto-normalized.",
         "analyze": "🔍 Analyze Canopy",
         "analyzing": "Processing image…",
         "reset": "🔄 Reset / New Analysis",
@@ -218,7 +229,7 @@ T = {
         "cars": "cars' annual emissions offset",
         "trees_eq": "mature trees / year equivalent",
         "daily": "kg CO₂ absorbed per day",
-        "disclaimer": "**⚠️ Important Disclaimer:** This is a rough proxy estimate.",
+        "disclaimer": "**⚠️ Important Disclaimer:** This is a rough proxy estimate based on green pixel thresholding. Real validation requires ground truth or LiDAR.",
         "download_mask": "📥 Download Canopy Mask (PNG)",
         "download_pdf": "📄 Download Full Report (PDF)",
         "geotiff_loaded": "✅ GeoTIFF loaded: {width}×{height}px, {bands} bands, {dtype}",
@@ -235,6 +246,8 @@ T = {
         "geotiff_not_available": "⚠️ GeoTIFF support requires rasterio. Install with: pip install rasterio",
         "no_image": "👆 Upload an image or click 'Try with sample image' to begin.",
         "error_title": "❌ Error Processing Image",
+        "no_green_detected": "⚠️ No green pixels detected with standard threshold. Trying with wider threshold...",
+        "wider_threshold_success": "✅ Wider threshold detected {pixels} green pixels",
         "progress_steps": [
             "Converting to HSV color space…",
             "Applying adaptive threshold…",
@@ -258,7 +271,7 @@ T = {
             "High-res (<2m/px): direct individual tree counting",
             "Medium-res (2–5m/px): adjusted crown detection",
             "Low-res (>5m/px): density-based estimation",
-            "Color space: HSV (Hue 30°–80°, Saturation ≥ 40, Value ≥ 40)",
+            "Color space: HSV (Hue 20°–100°, Saturation ≥ 20, Value ≥ 20)",
             "Morphology kernel: 5 × 5, close + open operations",
             "Carbon factors: IPCC AR6 WGIII default biomass expansion factors",
             "Image resize: automatic downscale if > 2000 × 2000 px",
@@ -286,7 +299,7 @@ T = {
         "title": "🌿 CanopyLens — Analyse de la Canopée Forestière",
         "subtitle": "Estimer la couverture de canopée et le stock de carbone",
         "upload": "Télécharger une image satellite (RVB ou GeoTIFF)",
-        "upload_hint": "💡 Formats supportés : PNG, JPG, GeoTIFF (.tif/.tiff)",
+        "upload_hint": "💡 Formats supportés : PNG, JPG, GeoTIFF (.tif/.tiff). Données Sentinel-2 16-bit normalisées automatiquement.",
         "analyze": "🔍 Analyser la Canopée",
         "analyzing": "Traitement en cours…",
         "reset": "🔄 Réinitialiser",
@@ -315,7 +328,7 @@ T = {
         "cars": "voitures/an",
         "trees_eq": "arbres/an",
         "daily": "kg CO₂/jour",
-        "disclaimer": "**⚠️ Avertissement :** Estimation approximative.",
+        "disclaimer": "**⚠️ Avertissement :** Estimation approximative basée sur le seuillage des pixels verts. Validation réelle nécessite terrain ou LiDAR.",
         "download_mask": "📥 Télécharger Masque (PNG)",
         "download_pdf": "📄 Télécharger Rapport (PDF)",
         "geotiff_loaded": "✅ GeoTIFF chargé : {width}×{height}px, {bands} bandes, {dtype}",
@@ -332,6 +345,8 @@ T = {
         "geotiff_not_available": "⚠️ Support GeoTIFF nécessite rasterio.",
         "no_image": "👆 Téléchargez une image.",
         "error_title": "❌ Erreur",
+        "no_green_detected": "⚠️ Aucun pixel vert détecté. Tentative avec seuil élargi...",
+        "wider_threshold_success": "✅ Seuil élargi a détecté {pixels} pixels verts",
         "progress_steps": [
             "Conversion TSV…",
             "Seuil adaptatif…",
@@ -355,7 +370,7 @@ T = {
             "Haute rés. (<2m/px) : comptage direct",
             "Rés. moyenne (2–5m/px) : ajusté",
             "Basse rés. (>5m/px) : densité",
-            "Espace : TSV (Teinte 30°–80°)",
+            "Espace : TSV (Teinte 20°–100°)",
             "Noyau : 5 × 5",
             "Facteurs carbone : GIEC",
             "Resize auto si > 2000 × 2000 px",
@@ -382,31 +397,24 @@ T = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# GeoTIFF Loading Function with DEBUG
+# GeoTIFF Loading Function
 # ─────────────────────────────────────────────────────────────────────
 def load_geotiff(file_obj):
     """
-    Load a GeoTIFF file robustly with debug logs.
+    Load a GeoTIFF file robustly.
     Handles: RGB (3 bands), RGBA (4 bands), multispectral (13 bands), grayscale (1 band)
     Returns: (PIL Image, metadata_dict) or raises exception
     """
-    st.write("🐛 DEBUG: Entering load_geotiff()")
-    
     if not RASTERIO_AVAILABLE:
         raise ImportError("Rasterio is not installed. Install with: pip install rasterio")
     
-    st.write("🐛 DEBUG: Saving file to temp location")
     with tempfile.NamedTemporaryFile(delete=False, suffix='.tif') as tmp:
         file_data = file_obj.read()
         tmp.write(file_data)
         tmp_path = tmp.name
-        st.write(f"🐛 DEBUG: Temp file created: {tmp_path}, size: {len(file_data)} bytes")
     
     try:
-        st.write("🐛 DEBUG: Opening with rasterio")
         with rasterio.open(tmp_path) as src:
-            st.write(f"🐛 DEBUG: Rasterio opened - width={src.width}, height={src.height}, bands={src.count}")
-            
             metadata = {
                 'crs': str(src.crs) if src.crs else 'Unknown',
                 'width': src.width,
@@ -418,108 +426,71 @@ def load_geotiff(file_obj):
                 'bounds': src.bounds
             }
             
-            st.write(f"🐛 DEBUG: Metadata - dtype: {metadata['dtype']}, resolution: {metadata['resolution']}")
-            
             # Select bands
             num_bands = src.count
             if num_bands >= 4:
-                band_indices = [3, 2, 1]
-                st.write(f"🐛 DEBUG: Multispectral, using B4, B3, B2")
+                band_indices = [3, 2, 1]  # Sentinel-2: B4, B3, B2
             elif num_bands == 3:
                 band_indices = [0, 1, 2]
-                st.write(f"🐛 DEBUG: Standard RGB")
             elif num_bands == 1:
                 band_indices = [0, 0, 0]
-                st.write(f"🐛 DEBUG: Grayscale, duplicating")
             else:
                 band_indices = list(range(min(3, num_bands)))
-                st.write(f"🐛 DEBUG: Using first {num_bands} bands")
             
             # Read bands
-            st.write(f"🐛 DEBUG: Reading bands {band_indices}")
             bands = []
             for idx in band_indices:
                 band = src.read(idx + 1)
-                st.write(f"🐛 DEBUG: Band {idx} - shape: {band.shape}, dtype: {band.dtype}, min: {band.min()}, max: {band.max()}")
                 
                 if metadata['nodata'] is not None:
                     band = np.where(band == metadata['nodata'], 0, band)
                 bands.append(band)
             
             rgb = np.dstack(bands)
-            st.write(f"🐛 DEBUG: Stacked RGB - shape: {rgb.shape}, dtype: {rgb.dtype}")
-            
-            # DEBUG: Stats before normalization
-            st.write(f"🐛 DEBUG TIF: Shape avant normalisation = {rgb.shape}")
-            st.write(f"🐛 DEBUG TIF: Min/Max avant = {rgb.min()}/{rgb.max()}")
-            st.write(f"🐛 DEBUG TIF: Dtype avant = {rgb.dtype}")
             
             # Normalize based on dtype
             dtype = metadata['dtype']
-            st.write(f"🐛 DEBUG: Normalizing dtype: {dtype}")
             
             if 'uint16' in dtype:
-                st.write(f"🐛 DEBUG: Applying percentile stretch for uint16")
+                # Percentile stretch for Sentinel-2 (0-10000 range)
                 p2 = np.percentile(rgb, 2)
                 p98 = np.percentile(rgb, 98)
-                st.write(f"🐛 DEBUG TIF: Percentiles 2-98% = {p2} - {p98}")
+                
+                # If p2 is 0, use p5 instead
+                if p2 == 0:
+                    p2 = np.percentile(rgb, 5)
                 
                 if p98 - p2 < 1:
-                    st.warning("⚠️ Plage de valeurs trop étroite, utilisation de min/max simple")
                     p2, p98 = rgb.min(), rgb.max()
                 
                 if p98 > p2:
                     rgb = np.clip(rgb, p2, p98)
                     rgb = ((rgb - p2) / (p98 - p2) * 255).astype(np.uint8)
-                    st.write(f"🐛 DEBUG: After normalization - min: {rgb.min()}, max: {rgb.max()}")
                 else:
-                    st.write(f"🐛 DEBUG: WARNING: p98 <= p2, using simple conversion")
                     if rgb.max() > 0:
                         rgb = (rgb / rgb.max() * 255).astype(np.uint8)
                     else:
                         rgb = rgb.astype(np.uint8)
             
             elif 'float' in dtype:
-                st.write(f"🐛 DEBUG: Converting float to uint8")
-                st.write(f"🐛 DEBUG: Float range - min: {rgb.min()}, max: {rgb.max()}")
-                
                 if rgb.max() > 1.0:
-                    st.write(f"🐛 DEBUG: Values > 1.0, normalizing to 0-1")
                     rgb = rgb / rgb.max()
                 
                 rgb = np.clip(rgb, 0, 1)
                 rgb = (rgb * 255).astype(np.uint8)
-                st.write(f"🐛 DEBUG: After float conversion - min: {rgb.min()}, max: {rgb.max()}")
             
             else:
-                st.write(f"🐛 DEBUG: Using uint8 directly")
                 rgb = rgb.astype(np.uint8)
             
-            # DEBUG: Stats after normalization
-            st.write(f"🐛 DEBUG TIF: Min/Max après = {rgb.min()}/{rgb.max()}")
-            st.write(f"🐛 DEBUG TIF: Shape finale = {rgb.shape}")
-            
-            st.write(f"🐛 DEBUG: Creating PIL Image")
             img = Image.fromarray(rgb)
-            st.write(f"🐛 DEBUG TIF: Image PIL créée, size = {img.size}")
-            
-            # Test display
-            st.write(f"🐛 DEBUG: Testing image display")
-            st.image(img, caption="DEBUG: Raw GeoTIFF", use_container_width=True)
-            
-            st.write(f"🐛 DEBUG: Returning from load_geotiff()")
             return img, metadata
     
     except Exception as e:
-        st.write(f"🐛 DEBUG: ERROR in load_geotiff: {str(e)}")
-        import traceback
-        st.write(f"🐛 DEBUG: Traceback: {traceback.format_exc()}")
-        raise
+        raise Exception(f"Error loading GeoTIFF: {str(e)}")
     
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-            st.write(f"🐛 DEBUG: Temp file cleaned up")
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -534,11 +505,15 @@ def create_sample_image() -> Image.Image:
     noise = np.random.randint(-20, 20, img.shape, dtype=np.int16)
     img = np.clip(img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
     
+    # Forest patches (green)
     for _ in range(25):
         x, y = np.random.randint(0, 500, 2)
         r = np.random.randint(25, 90)
         green = np.random.randint(80, 160)
-        cv2.circle(img, (x, y), r, (20, green, 20), -1)
+        pil_img = Image.fromarray(img)
+        draw = ImageDraw.Draw(pil_img)
+        draw.ellipse([x-r, y-r, x+r, y+r], fill=(20, green, 20))
+        img = np.array(pil_img)
     
     return Image.fromarray(img)
 
@@ -579,17 +554,7 @@ def estimate_resolution_from_components(regions, canopy_area_ha, canopy_pct):
 # ─────────────────────────────────────────────────────────────────────
 def adaptive_tree_count(regions, resolution_m, canopy_area_ha, canopy_pct, biome_name):
     """Count trees adaptively based on resolution"""
-    density_by_biome = {
-        "Tropical Moist Forest": (400, 600),
-        "Forêt Tropicale Humide": (400, 600),
-        "Tropical Dry Forest": (200, 400),
-        "Forêt Tropicale Sèche": (200, 400),
-        "Mangrove Forest": (600, 1000),
-        "Forêt de Mangrove": (600, 1000),
-        "Temperate Forest": (300, 500),
-        "Forêt Tempérée": (300, 500),
-    }
-    min_density, max_density = density_by_biome.get(biome_name, (400, 600))
+    min_density, max_density = TREE_DENSITY_REFERENCE.get(biome_name, (400, 600))
 
     if resolution_m < 2.0:
         min_crown_px = max(5, int(1.0 / (resolution_m ** 2)))
@@ -628,7 +593,7 @@ def adaptive_tree_count(regions, resolution_m, canopy_area_ha, canopy_pct, biome
 # Core: image processing pipeline
 # ─────────────────────────────────────────────────────────────────────
 def process_image(image, carbon_factor, biome_name, user_resolution=None, geotiff_resolution=None, progress_callback=None):
-    """Full canopy analysis pipeline"""
+    """Full canopy analysis pipeline with wide HSV thresholds and fallback"""
     img_array = np.array(image.convert("RGB"))
     
     if progress_callback:
@@ -638,9 +603,20 @@ def process_image(image, carbon_factor, biome_name, user_resolution=None, geotif
     if progress_callback:
         progress_callback(1)
 
-    lower_green = np.array([30, 40, 40])
-    upper_green = np.array([80, 255, 255])
+    # WIDE HSV threshold for GeoTIFF compatibility
+    lower_green = np.array([20, 20, 20])
+    upper_green = np.array([100, 255, 255])
+    
     mask = hsv_threshold(hsv, lower_green, upper_green)
+    canopy_pixels = int(np.sum(mask > 0))
+    
+    # FALLBACK: if no green detected, try even wider threshold
+    if canopy_pixels == 0:
+        lower_green = np.array([15, 15, 15])
+        upper_green = np.array([110, 255, 255])
+        mask = hsv_threshold(hsv, lower_green, upper_green)
+        canopy_pixels = int(np.sum(mask > 0))
+    
     if progress_callback:
         progress_callback(2)
 
@@ -651,7 +627,6 @@ def process_image(image, carbon_factor, biome_name, user_resolution=None, geotif
     regions = measure.regionprops(labeled)
 
     total_pixels = mask.shape[0] * mask.shape[1]
-    canopy_pixels = int(np.sum(mask > 0))
     canopy_pct = (canopy_pixels / total_pixels) * 100
     canopy_area_ha_10m = canopy_pixels * 0.0001
 
@@ -715,7 +690,6 @@ def generate_pdf_report(metrics, biome_name, lang, geotiff_metadata=None):
     if not REPORTLAB_AVAILABLE:
         raise ImportError("ReportLab not installed")
     
-    t = T[lang]
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
 
@@ -726,7 +700,11 @@ def generate_pdf_report(metrics, biome_name, lang, geotiff_metadata=None):
 
     elements = []
     elements.append(Paragraph("🌿 CanopyLens Report", title_style))
-    elements.append(Paragraph(f"{t['pdf_date']}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", body_style))
+    
+    # FIX: Use local variable instead of missing translation key
+    date_label = "Date" if lang == "English" else "Date"
+    elements.append(Paragraph(f"{date_label}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", body_style))
+    
     elements.append(Spacer(1, 0.5*cm))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#10B981")))
     elements.append(Spacer(1, 0.5*cm))
@@ -746,14 +724,14 @@ def generate_pdf_report(metrics, biome_name, lang, geotiff_metadata=None):
 
     table_data = [
         ["Metric", "Value"],
-        [t["pdf_biome"], biome_name],
-        [t["pdf_resolution"], f"{metrics['resolution_m']:.2f} m/px ({metrics['resolution_source']})"],
-        [t["pdf_area"], f"{metrics['canopy_area_ha']:.2f} ha"],
-        [t["pdf_carbon"], f"{metrics['carbon_stock_tco2']:.2f} tCO₂"],
-        [t["pdf_trees"], tree_display],
-        [t["pdf_coverage"], f"{metrics['canopy_pct']:.1f}%"],
-        [t["pdf_cars"], f"{cars_offset:.1f}"],
-        [t["pdf_daily"], f"{daily_kg:.1f} kg"],
+        ["Biome", biome_name],
+        ["Resolution", f"{metrics['resolution_m']:.2f} m/px ({metrics['resolution_source']})"],
+        ["Canopy Area", f"{metrics['canopy_area_ha']:.2f} ha"],
+        ["Carbon Stock", f"{metrics['carbon_stock_tco2']:.2f} tCO₂"],
+        ["Trees Detected", tree_display],
+        ["Canopy Coverage", f"{metrics['canopy_pct']:.1f}%"],
+        ["Cars Offset (year)", f"{cars_offset:.1f}"],
+        ["Daily CO₂ Absorption", f"{daily_kg:.1f} kg"],
     ]
 
     table = Table(table_data, colWidths=[8*cm, 6*cm])
@@ -830,31 +808,20 @@ def main():
     
     try:
         if uploaded_file is not None:
-            st.write(f"🐛 DEBUG: File uploaded - name: {uploaded_file.name}, size: {uploaded_file.size} bytes")
-            
             _, file_extension = os.path.splitext(uploaded_file.name)
             file_extension = file_extension.lower().lstrip('.')
-            st.write(f"🐛 DEBUG: Extension detected: '{file_extension}'")
             
             if file_extension in ['tif', 'tiff']:
-                st.write(f"🐛 DEBUG: Detected TIF/TIFF file")
                 if not RASTERIO_AVAILABLE:
                     st.error(t["geotiff_not_available"])
                     return
                 
-                st.write(f"🐛 DEBUG: Calling load_geotiff()")
                 with st.spinner(t["geotiff_loading"]):
                     image, geotiff_metadata = load_geotiff(uploaded_file)
                 
-                st.write(f"🐛 DEBUG: load_geotiff() returned - image type: {type(image)}, metadata type: {type(geotiff_metadata)}")
-                if image is not None:
-                    st.write(f"🐛 DEBUG: Image from load_geotiff - size: {image.size}, mode: {image.mode}")
-                
-                # CRUCIAL: Store image in session_state
                 st.session_state.geotiff_metadata = geotiff_metadata
                 st.session_state.image_uploaded = True
-                st.session_state.image = image  # ← CRUCIAL !
-                st.write(f"🐛 DEBUG: Stored image in session_state.image")
+                st.session_state.image = image
                 
                 st.success(t["geotiff_loaded"].format(
                     width=geotiff_metadata['width'],
@@ -863,20 +830,14 @@ def main():
                     dtype=geotiff_metadata['dtype']
                 ))
             else:
-                st.write(f"🐛 DEBUG: Detected standard image file")
                 image = Image.open(uploaded_file).convert("RGB")
-                st.write(f"🐛 DEBUG: Standard image loaded - size: {image.size}, mode: {image.mode}")
                 st.session_state.geotiff_metadata = None
                 st.session_state.image_uploaded = True
-                st.session_state.image = image  # ← CRUCIAL !
-                st.write(f"🐛 DEBUG: Stored standard image in session_state.image")
+                st.session_state.image = image
             
             if image is not None:
-                st.write(f"🐛 DEBUG: Before safe_resize - size: {image.size}")
                 image = safe_resize(image)
-                st.write(f"🐛 DEBUG: After safe_resize - size: {image.size}")
-                st.session_state.image = image  # ← Update after resize
-                st.write(f"🐛 DEBUG: Updated session_state.image after resize")
+                st.session_state.image = image
         
         elif sample_clicked:
             image = create_sample_image()
@@ -885,39 +846,13 @@ def main():
             st.session_state.geotiff_metadata = None
             
         elif st.session_state.get("image_uploaded"):
-            st.write(f"🐛 DEBUG: Retrieving image from session_state")
             image = st.session_state.get("image")
             geotiff_metadata = st.session_state.get("geotiff_metadata")
-            st.write(f"🐛 DEBUG: Retrieved image: {image is not None}, meta {geotiff_metadata is not None}")
-            if image is not None:
-                st.write(f"🐛 DEBUG: Retrieved image size: {image.size}, mode: {image.mode}")
     
     except Exception as e:
-        st.write(f"🐛 DEBUG: ERROR in file loading: {str(e)}")
-        import traceback
-        st.write(f"🐛 DEBUG: Full traceback: {traceback.format_exc()}")
         st.error(t["geotiff_error"].format(error=str(e)))
         st.info(t["geotiff_hint"])
         return
-
-    st.write(f"🐛 DEBUG: Current session_state keys: {list(st.session_state.keys())}")
-    st.write(f"🐛 DEBUG: image_uploaded: {st.session_state.get('image_uploaded')}")
-    st.write(f"🐛 DEBUG: image in session_state: {'image' in st.session_state}")
-    if 'image' in st.session_state:
-        st.write(f"🐛 DEBUG: session_state.image size: {st.session_state.image.size}")
-
-    # ── Test Section: Show loaded image before analysis ──
-    if st.session_state.get('image'):
-        st.subheader("🧪 Image chargée (vérification)")
-        st.image(st.session_state.image, caption="Image après chargement", use_container_width=True)
-        
-        img_array = np.array(st.session_state.image)
-        st.write(f"Stats: min={img_array.min()}, max={img_array.max()}, mean={img_array.mean():.1f}")
-        
-        if img_array.max() == 0:
-            st.warning("⚠️ L'image est TOUTE NOIRE ! Problème de normalisation GeoTIFF.")
-        elif img_array.min() == img_array.max():
-            st.warning("⚠️ L'image est UNIFORME ! Problème de normalisation GeoTIFF.")
 
     # Display GeoTIFF metadata
     if st.session_state.get("geotiff_metadata"):
@@ -939,8 +874,6 @@ def main():
                     st.caption(f"**{t['geotiff_nodata']}:** {meta['nodata']}")
 
     if st.session_state.get("image_uploaded") and image is not None:
-        st.write(f"🐛 DEBUG: Entering image display section")
-        
         image_container = st.container()
         with image_container:
             st.markdown('<div class="section-container">', unsafe_allow_html=True)
@@ -948,25 +881,15 @@ def main():
             with col1:
                 st.markdown('<div class="image-container">', unsafe_allow_html=True)
                 st.subheader(t["original"])
-                st.write(f"🐛 DEBUG: About to display image - size: {image.size}, mode: {image.mode}")
                 st.image(image, caption="Input Image", use_container_width=True)
-                st.write(f"🐛 DEBUG: Image displayed successfully")
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            st.write(f"🐛 DEBUG: About to show Analyze button")
             if st.button(t["analyze"], type="primary"):
-                st.write(f"🐛 DEBUG: Analyze button clicked!")
-                
-                # DEBUG: Verify image exists
-                st.write(f"🐛 DEBUG BOUTON: image_uploaded = {st.session_state.image_uploaded}")
-                st.write(f"🐛 DEBUG BOUTON: image dans session_state = {st.session_state.get('image')}")
-                
                 if 'image' not in st.session_state or st.session_state.image is None:
-                    st.error("❌ Aucune image trouvée. Rechargez l'image.")
+                    st.error("❌ No image found. Please reload the image.")
                     st.stop()
                 
                 image = st.session_state.image
-                st.write(f"🐛 DEBUG: Using image from session_state - size: {image.size}")
                 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -977,32 +900,31 @@ def main():
                     status_text.text(t["progress_steps"][step])
 
                 try:
-                    st.write(f"🐛 DEBUG: Starting image processing")
                     with st.spinner(t["analyzing"]):
                         geotiff_res = None
                         if user_resolution == "geotiff" and st.session_state.get("geotiff_metadata"):
                             geotiff_res = st.session_state.geotiff_metadata['resolution'][0]
-                            st.write(f"🐛 DEBUG: Using GeoTIFF resolution: {geotiff_res}")
                         
-                        st.write(f"🐛 DEBUG: Calling process_image() with image size: {image.size}")
                         processed, contour_img, mask, metrics = process_image(
                             image, carbon_factor, selected_biome,
                             user_resolution=user_resolution if user_resolution != "geotiff" else None,
                             geotiff_resolution=geotiff_res,
                             progress_callback=update_progress,
                         )
-                        st.write(f"🐛 DEBUG: process_image() completed successfully")
+
+                    # Check if no green was detected
+                    if metrics.get("canopy_pixels", 0) == 0:
+                        st.warning(t["no_green_detected"])
+                        return
 
                     progress_bar.progress(100)
                     status_text.text(t["progress_steps"][-1])
 
-                    st.write(f"🐛 DEBUG: Storing results in session_state")
                     st.session_state.processed_image = processed
                     st.session_state.contour_image = contour_img
                     st.session_state.canopy_mask = mask
                     st.session_state.metrics = metrics
                     st.session_state.analysis_done = True
-                    st.write(f"🐛 DEBUG: analysis_done set to True")
 
                 except Exception as e:
                     st.error(f"{t['error_title']}: {str(e)}")

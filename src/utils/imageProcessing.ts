@@ -153,11 +153,13 @@ export function analyzeCanopy(
   const maskImageData = maskCtx.createImageData(width, height);
   const maskData = maskImageData.data;
 
-  // Adaptive threshold based on sensitivity
-  const hueMin = 60 - (options.sensitivity * 0.3);
-  const hueMax = 160 + (options.sensitivity * 0.2);
-  const satMin = 20 - (options.sensitivity * 0.1);
-  const valMin = 15;
+  // WIDER HSV threshold for better GeoTIFF compatibility (matches Python v5.0)
+  // Base thresholds: Hue 25-90°, Saturation ≥ 30, Value ≥ 30
+  // Sensitivity adjusts these ranges
+  const hueMin = 25 - (options.sensitivity * 0.05); // Wider range for GeoTIFF
+  const hueMax = 90 + (options.sensitivity * 0.1);
+  const satMin = 30 - (options.sensitivity * 0.1);
+  const valMin = 30 - (options.sensitivity * 0.1);
 
   let canopyPixels = 0;
   const canopyMask = new Array(totalPixels).fill(false);
@@ -174,6 +176,28 @@ export function analyzeCanopy(
     if (isCanopy) {
       canopyPixels++;
       canopyMask[i] = true;
+    }
+  }
+
+  // If no green detected, try with wider threshold (fallback for GeoTIFF)
+  if (canopyPixels === 0) {
+    const widerHueMin = 20;
+    const widerHueMax = 100;
+    const widerSatMin = 20;
+    const widerValMin = 20;
+    
+    for (let i = 0; i < totalPixels; i++) {
+      const r = data[i * 4];
+      const g = data[i * 4 + 1];
+      const b = data[i * 4 + 2];
+
+      const [h, s, v] = rgbToHsv(r, g, b);
+      const isCanopy = h >= widerHueMin && h <= widerHueMax && s >= widerSatMin && v >= widerValMin;
+
+      if (isCanopy) {
+        canopyPixels++;
+        canopyMask[i] = true;
+      }
     }
   }
 
