@@ -32,160 +32,467 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────────────
-# CSS personnalisé - Design sombre et professionnel
+# CSS personnalisé - Design professionnel moderne
 # ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Fond global */
-    .stApp {
-        background: linear-gradient(180deg, #030712 0%, #0a1628 50%, #030712 100%);
+    /* Import Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    
+    /* Variables CSS */
+    :root {
+        --primary: #10b981;
+        --primary-dark: #059669;
+        --primary-darker: #047857;
+        --secondary: #0ea5e9;
+        --accent: #f59e0b;
+        --bg-dark: #030712;
+        --bg-medium: #0f172a;
+        --bg-light: #1e293b;
+        --text-primary: #f9fafb;
+        --text-secondary: #d1d5db;
+        --text-muted: #9ca3af;
+        --border: rgba(51, 65, 85, 0.5);
+        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+        --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+        --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+        --shadow-glow: 0 0 20px rgba(16, 185, 129, 0.3);
     }
     
-    /* Header */
+    /* Fond global avec animation subtile */
+    .stApp {
+        background: linear-gradient(135deg, #030712 0%, #0a1628 50%, #030712 100%);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    /* Animations */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+    }
+    
+    /* Header avec glassmorphism */
     .main-header {
         text-align: center;
-        padding: 2rem 0;
-        margin-bottom: 2rem;
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%);
-        border-radius: 16px;
+        padding: 3rem 2rem;
+        margin-bottom: 2.5rem;
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.04) 100%);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
         border: 1px solid rgba(16, 185, 129, 0.2);
-        box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1);
+        box-shadow: var(--shadow-lg), var(--shadow-glow);
+        animation: fadeIn 0.6s ease-out;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .main-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--primary), transparent);
+        animation: pulse 2s ease-in-out infinite;
     }
     
     .main-header h1 {
-        color: #10b981 !important;
-        font-size: 2.5rem !important;
+        color: var(--primary) !important;
+        font-size: 3rem !important;
         font-weight: 800 !important;
-        margin-bottom: 0.5rem !important;
-        text-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+        margin-bottom: 0.75rem !important;
+        text-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+        letter-spacing: -0.02em;
+        background: linear-gradient(135deg, var(--primary) 0%, #34d399 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
     
     .main-header em {
-        color: #9ca3af !important;
-        font-size: 1.1rem !important;
+        color: var(--text-muted) !important;
+        font-size: 1.2rem !important;
+        font-weight: 300 !important;
+        letter-spacing: 0.02em;
     }
     
-    /* Conteneurs de section */
+    /* Conteneurs de section avec glassmorphism */
     .section-container {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.6) 100%);
+        backdrop-filter: blur(10px);
+        padding: 2.5rem;
+        border-radius: 20px;
+        margin: 2rem 0;
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-lg);
+        animation: fadeIn 0.5s ease-out;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .section-container:hover {
+        border-color: rgba(16, 185, 129, 0.3);
+        box-shadow: var(--shadow-lg), 0 0 30px rgba(16, 185, 129, 0.15);
+        transform: translateY(-2px);
+    }
+    
+    /* Conteneurs d'image avec effet premium */
+    .image-container {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(2, 6, 23, 0.8) 100%);
+        backdrop-filter: blur(10px);
         padding: 2rem;
         border-radius: 16px;
         margin: 1.5rem 0;
-        border: 1px solid rgba(51, 65, 85, 0.5);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-md);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
-    /* Conteneurs d'image */
-    .image-container {
-        background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
-        padding: 1.5rem;
-        border-radius: 12px;
-        margin: 1rem 0;
-        border: 1px solid rgba(51, 65, 85, 0.5);
+    .image-container:hover {
+        border-color: rgba(14, 165, 233, 0.3);
+        box-shadow: var(--shadow-lg), 0 0 25px rgba(14, 165, 233, 0.15);
     }
     
-    /* Cartes de métriques */
+    /* Cartes de métriques avec effet premium */
     .metric-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        padding: 1.5rem;
-        border-radius: 12px;
-        margin: 0.5rem 0;
-        border: 1px solid rgba(51, 65, 85, 0.5);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        transition: all 0.3s ease;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.7) 100%);
+        backdrop-filter: blur(10px);
+        padding: 2rem;
+        border-radius: 16px;
+        margin: 0.75rem 0;
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-md);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--primary), var(--secondary));
+        transform: scaleX(0);
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .metric-card:hover::before {
+        transform: scaleX(1);
     }
     
     .metric-card:hover {
-        transform: translateY(-2px);
+        transform: translateY(-4px);
         border-color: rgba(16, 185, 129, 0.4);
-        box-shadow: 0 8px 24px rgba(16, 185, 129, 0.15);
+        box-shadow: var(--shadow-lg), 0 0 30px rgba(16, 185, 129, 0.2);
     }
     
-    /* Boutons */
+    /* Boutons avec effet premium */
     .stButton>button {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%) !important;
         color: white !important;
         border: none !important;
-        padding: 0.75rem 2rem !important;
+        padding: 1rem 2.5rem !important;
         border-radius: 12px !important;
         font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
+        font-size: 1rem !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3) !important;
+        position: relative;
+        overflow: hidden;
+        letter-spacing: 0.02em;
+    }
+    
+    .stButton>button::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+    }
+    
+    .stButton>button:hover::before {
+        width: 300px;
+        height: 300px;
     }
     
     .stButton>button:hover {
-        background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4) !important;
+        background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-darker) 100%) !important;
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4) !important;
     }
     
-    /* File uploader */
+    .stButton>button:active {
+        transform: translateY(-1px) !important;
+    }
+    
+    /* File uploader avec effet premium */
     .stFileUploader {
         background: linear-gradient(135deg, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.5) 100%) !important;
+        backdrop-filter: blur(10px);
         border: 2px dashed rgba(16, 185, 129, 0.3) !important;
-        border-radius: 12px !important;
-        padding: 2rem !important;
+        border-radius: 16px !important;
+        padding: 3rem 2rem !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
     
-    /* Alertes */
+    .stFileUploader:hover {
+        border-color: rgba(16, 185, 129, 0.6) !important;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.7) 100%) !important;
+        box-shadow: 0 0 30px rgba(16, 185, 129, 0.2) !important;
+    }
+    
+    /* Alertes avec design premium */
     .stAlert {
         border-radius: 12px !important;
         border-left-width: 4px !important;
+        padding: 1.25rem !important;
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.4s ease-out;
     }
     
     .stAlert-info {
         background: linear-gradient(135deg, rgba(14, 165, 233, 0.1) 0%, rgba(2, 132, 199, 0.05) 100%) !important;
-        border-left-color: #0ea5e9 !important;
+        border-left-color: var(--secondary) !important;
+        box-shadow: 0 4px 15px rgba(14, 165, 233, 0.15) !important;
     }
     
     .stAlert-warning {
         background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%) !important;
-        border-left-color: #f59e0b !important;
+        border-left-color: var(--accent) !important;
+        box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15) !important;
     }
     
     .stAlert-success {
         background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%) !important;
-        border-left-color: #10b981 !important;
+        border-left-color: var(--primary) !important;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.15) !important;
     }
     
-    /* Métriques */
+    .stAlert-error {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%) !important;
+        border-left-color: #ef4444 !important;
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.15) !important;
+    }
+    
+    /* Métriques avec typographie premium */
     [data-testid="stMetricValue"] {
-        color: #10b981 !important;
-        font-size: 2.5rem !important;
+        color: var(--primary) !important;
+        font-size: 2.75rem !important;
         font-weight: 700 !important;
+        letter-spacing: -0.02em;
+        text-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+        background: linear-gradient(135deg, var(--primary) 0%, #34d399 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
     
     [data-testid="stMetricLabel"] {
-        color: #9ca3af !important;
-        font-size: 0.9rem !important;
+        color: var(--text-muted) !important;
+        font-size: 0.95rem !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
     }
     
-    /* Sidebar */
+    [data-testid="stMetricDelta"] {
+        color: var(--secondary) !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Sidebar avec glassmorphism */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f172a 0%, #020617 100%) !important;
-        border-right: 1px solid rgba(51, 65, 85, 0.5) !important;
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(2, 6, 23, 0.95) 100%) !important;
+        backdrop-filter: blur(20px);
+        border-right: 1px solid var(--border) !important;
+        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
     }
     
-    /* Titres */
+    [data-testid="stSidebar"] h3 {
+        color: var(--primary) !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.01em;
+    }
+    
+    /* Titres avec typographie premium */
     h1, h2, h3, h4 {
-        color: #f3f4f6 !important;
+        color: var(--text-primary) !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em;
     }
     
-    h4 {
-        color: #10b981 !important;
-        margin-top: 1.5rem !important;
+    h1 {
+        font-size: 2.5rem !important;
+        margin-bottom: 1.5rem !important;
+    }
+    
+    h2 {
+        font-size: 2rem !important;
+        margin-bottom: 1.25rem !important;
+    }
+    
+    h3 {
+        font-size: 1.5rem !important;
         margin-bottom: 1rem !important;
     }
     
-    /* Texte */
-    p, span, li {
-        color: #d1d5db !important;
+    h4 {
+        color: var(--primary) !important;
+        font-size: 1.25rem !important;
+        margin-top: 2rem !important;
+        margin-bottom: 1rem !important;
+        font-weight: 600 !important;
     }
     
-    /* Images */
+    /* Texte avec typographie premium */
+    p, span, li {
+        color: var(--text-secondary) !important;
+        line-height: 1.7 !important;
+        font-weight: 400 !important;
+    }
+    
+    /* Images avec effet premium */
     img {
-        border-radius: 8px !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+        border-radius: 12px !important;
+        box-shadow: var(--shadow-lg) !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    img:hover {
+        transform: scale(1.02) !important;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+    }
+    
+    /* Selectbox avec style premium */
+    .stSelectbox > div[data-baseweb="select"] {
+        background: rgba(30, 41, 59, 0.6) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    .stSelectbox > div[data-baseweb="select"]:hover {
+        border-color: rgba(16, 185, 129, 0.4) !important;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.15) !important;
+    }
+    
+    /* Slider avec style premium */
+    .stSlider > div[data-baseweb="slider"] > div > div {
+        background: linear-gradient(90deg, var(--primary) 0%, var(--primary-dark) 100%) !important;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
+    }
+    
+    /* Progress bar avec style premium */
+    .stProgress > div > div > div > div {
+        background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%) !important;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
+    }
+    
+    /* Expander avec style premium */
+    .streamlit-expanderHeader {
+        background: rgba(30, 41, 59, 0.6) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        padding: 1rem !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    .streamlit-expanderHeader:hover {
+        border-color: rgba(16, 185, 129, 0.3) !important;
+        background: rgba(30, 41, 59, 0.8) !important;
+    }
+    
+    /* Download button avec style premium */
+    .stDownloadButton > button {
+        background: linear-gradient(135deg, var(--secondary) 0%, #0284c7 100%) !important;
+        box-shadow: 0 4px 15px rgba(14, 165, 233, 0.3) !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    .stDownloadButton > button:hover {
+        background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 25px rgba(14, 165, 233, 0.4) !important;
+    }
+    
+    /* Scrollbar personnalisée */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: var(--bg-dark);
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%);
+        border-radius: 10px;
+        border: 2px solid var(--bg-dark);
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, var(--primary-dark) 0%, var(--primary-darker) 100%);
+    }
+    
+    /* Sélection de texte */
+    ::selection {
+        background: rgba(16, 185, 129, 0.3);
+        color: var(--text-primary);
+    }
+    
+    ::-moz-selection {
+        background: rgba(16, 185, 129, 0.3);
+        color: var(--text-primary);
+    }
+    
+    /* Focus states */
+    input:focus, textarea:focus, select:focus {
+        outline: none !important;
+        border-color: var(--primary) !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
+    }
+    
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .main-header h1 {
+            font-size: 2rem !important;
+        }
+        
+        .main-header em {
+            font-size: 1rem !important;
+        }
+        
+        .section-container {
+            padding: 1.5rem !important;
+        }
+        
+        .metric-card {
+            padding: 1.5rem !important;
+        }
+        
+        [data-testid="stMetricValue"] {
+            font-size: 2rem !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
