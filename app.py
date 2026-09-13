@@ -1,11 +1,11 @@
 """
-CanopyLens v9.0 - Forest Canopy Analysis
+CanopyLens v9.1 - Forest Canopy Analysis
 =========================================
 Analyse d'images satellites pour estimer la canopée forestière,
 le nombre d'arbres et le stock de carbone.
 
-Corrections apportées :
-- Comptage d'arbres avec watershed (séparation des houppiers)
+Version simplifiée pour déploiement Streamlit Cloud :
+- Comptage d'arbres avec composantes connexes (PIL/numpy)
 - Sélection manuelle de la résolution (Sentinel-2, Planet, Drone)
 - Segmentation par indice ExG (Excess Green) + fallback HSV
 - Section "Honnêteté" dynamique selon la source d'image
@@ -16,10 +16,6 @@ import numpy as np
 from PIL import Image
 import io
 from datetime import datetime
-from skimage import measure, filters, morphology
-from skimage.segmentation import find_boundaries, watershed
-from skimage.feature import peak_local_max
-from scipy import ndimage as ndi
 
 # ─────────────────────────────────────────────────────────────────────
 # Configuration de la page
@@ -698,56 +694,73 @@ TREE_DENSITY_REFERENCE = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Détection des houppiers avec watershed
+# Comptage des arbres avec composantes connexes (numpy/PIL uniquement)
 # ─────────────────────────────────────────────────────────────────────
-def detect_tree_crowns_watershed(mask, resolution_m, biome_name):
+def count_trees_simple(mask, min_area=5):
     """
-    Détecte les houppiers individuels en utilisant watershed contrôlé par marqueurs.
-    La distance minimale entre pics vient de la densité d'arbres par biome.
+    Compte les arbres individuels en utilisant une approche simplifiée
+    basée sur les composantes connexes avec numpy uniquement.
     
     Args:
         mask: Masque binaire de la canopée
-        resolution_m: Résolution en mètres par pixel
-        biome_name: Nom du biome pour obtenir la densité d'arbres
+        min_area: Surface minimale pour considérer un composant comme un arbre
     
     Returns:
-        crown_labels: Masque avec les houppiers étiquetés
-        regions: Liste des régions détectées
+        num_trees: Nombre d'arbres détectés
     """
+    # Convertir le masque en binaire
     binary = mask > 0
+    
     if not np.any(binary):
-        return np.zeros(mask.shape, dtype=np.int32), []
-
-    min_density, max_density = TREE_DENSITY_REFERENCE.get(biome_name, (400, 600))
-    avg_density = (min_density + max_density) / 2.0
-    avg_crown_area_m2 = 10000.0 / avg_density
-    crown_diameter_m = float(np.sqrt(avg_crown_area_m2))
-    crown_diameter_px = max(2.0, crown_diameter_m / max(resolution_m, 1e-6))
-
-    distance = ndi.distance_transform_edt(binary)
-    min_distance_px = max(1, int(round(crown_diameter_px * 0.6)))
-    coords = peak_local_max(distance, min_distance=min_distance_px,
-                             labels=binary, exclude_border=False)
-
-    if len(coords) == 0:
-        labeled = measure.label(binary, connectivity=2)
-        return labeled, measure.regionprops(labeled)
-
-    markers_mask = np.zeros(binary.shape, dtype=bool)
-    markers_mask[tuple(coords.T)] = True
-    markers, _ = ndi.label(markers_mask)
-
-    crown_labels = watershed(-distance, markers, mask=binary)
-    regions = measure.regionprops(crown_labels)
-    return crown_labels, regions
+        return 0
+    
+    # Utiliser une approche simplifiée de labeling avec numpy
+    # Créer un tableau de labels
+    labels = np.zeros(binary.shape, dtype=np.int32)
+    current_label = 1
+    
+    # Parcourir tous les pixels
+    for y in range(binary.shape[0]):
+        for x in range(binary.shape[1]):
+            if binary[y, x] and labels[y, x] == 0:
+                # Nouveau composant connexe trouvé
+                # Utiliser un algorithme de flood fill simplifié
+                stack = [(y, x)]
+                labels[y, x] = current_label
+                area = 0
+                
+                while stack:
+                    cy, cx = stack.pop()
+                    area += 1
+                    
+                    # Vérifier les 4 voisins
+                    for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        ny, nx = cy + dy, cx + dx
+                        if (0 <= ny < binary.shape[0] and 
+                            0 <= nx < binary.shape[1] and 
+                            binary[ny, nx] and labels[ny, nx] == 0):
+                            labels[ny, nx] = current_label
+                            stack.append((ny, nx))
+                
+                current_label += 1
+    
+    # Compter les composants avec une surface suffisante
+    num_trees = 0
+    for label in range(1, current_label):
+        component_area = np.sum(labels == label)
+        if component_area >= min_area:
+            num_trees += 1
+    
+    return num_trees
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Comptage adaptatif des arbres
+# Comptage adaptatif des arbres (version simplifiée)
 # ─────────────────────────────────────────────────────────────────────
 def adaptive_tree_count(mask, resolution_m, canopy_area_ha, canopy_pct, biome_name):
     """
     Compte les arbres de manière adaptative selon la résolution et la couverture.
+    Version simplifiée sans scipy/scikit-image.
     
     Args:
         mask: Masque binaire de la canopée
@@ -762,17 +775,8 @@ def adaptive_tree_count(mask, resolution_m, canopy_area_ha, canopy_pct, biome_na
     min_density, max_density = TREE_DENSITY_REFERENCE.get(biome_name, (400, 600))
 
     if resolution_m <= 5.0:
-        crown_labels, regions = detect_tree_crowns_watershed(mask, resolution_m, biome_name)
-
-        if resolution_m < 2.0:
-            min_crown_px = max(3, int(0.5 / (resolution_m ** 2)))
-            max_crown_px = int(300.0 / (resolution_m ** 2))
-        else:
-            min_crown_px = max(5, int(5.0 / (resolution_m ** 2)))
-            max_crown_px = int(400.0 / (resolution_m ** 2))
-
-        tree_candidates = [r for r in regions if min_crown_px <= r.area <= max_crown_px]
-        count = len(tree_candidates)
+        # Comptage direct avec composantes connexes
+        count = count_trees_simple(mask, min_area=5)
 
         if canopy_pct > 75:
             return {
@@ -780,28 +784,28 @@ def adaptive_tree_count(mask, resolution_m, canopy_area_ha, canopy_pct, biome_na
                 "count": count,
                 "count_range": (count, int(count * 1.4)),
                 "note_key": "tree_count_note_closedcanopy",
-                "crown_labels": crown_labels,
             }
 
         if resolution_m < 2.0:
             return {
                 "method": "direct", "count": count, "count_range": None,
-                "note_key": "tree_count_note_highres", "crown_labels": crown_labels,
+                "note_key": "tree_count_note_highres",
             }
         else:
             estimated = int(count * 1.15)
             return {
                 "method": "adjusted", "count": estimated,
                 "count_range": (count, int(count * 1.3)),
-                "note_key": "tree_count_note_medres", "crown_labels": crown_labels,
+                "note_key": "tree_count_note_medres",
             }
     else:
+        # Estimation par densité pour basse résolution
         est_min = int(canopy_area_ha * min_density)
         est_max = int(canopy_area_ha * max_density)
         return {
             "method": "density", "count": None,
             "count_range": (est_min, est_max),
-            "note_key": "tree_count_note_lowres", "crown_labels": None,
+            "note_key": "tree_count_note_lowres",
         }
 
 
